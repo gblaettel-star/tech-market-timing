@@ -149,14 +149,23 @@ def history_chart(hist, lb_days):
     cut = hist.index[-1] - pd.Timedelta(days=lb_days)
     h = hist[hist.index >= cut]
     fig = make_subplots(specs=[[{"secondary_y": True}]])
-    fig.add_hrect(y0=0.25, y1=1, fillcolor="#16a34a", opacity=0.06, line_width=0)
-    fig.add_hrect(y0=-1, y1=-0.25, fillcolor="#dc2626", opacity=0.06, line_width=0)
+    # Zone bands — pinned explicitly to the composite (primary) y-axis so they don't
+    # bind to the NDX secondary axis and render off-screen.
+    for y0, y1, col, op in [(0.25, 1.05, "#16a34a", 0.20),
+                            (-0.25, 0.25, "#f59e0b", 0.12),
+                            (-1.05, -0.25, "#dc2626", 0.20)]:
+        fig.add_shape(type="rect", xref="paper", x0=0, x1=1, yref="y", y0=y0, y1=y1,
+                      fillcolor=col, opacity=op, line_width=0, layer="below")
+    for x, y, txt, col in [(0.012, 0.92, "BUY ZONE", "#15803d"),
+                           (0.012, -0.92, "SELL ZONE", "#b91c1c")]:
+        fig.add_annotation(xref="paper", x=x, yref="y", y=y, text=txt, showarrow=False,
+                           xanchor="left", font=dict(size=13, color=col))
+    fig.add_hline(y=0.25, line=dict(color=S.GREEN, width=1.5, dash="dot"))
+    fig.add_hline(y=-0.25, line=dict(color=S.RED, width=1.5, dash="dot"))
     fig.add_trace(go.Scatter(x=h.index, y=h["composite"], name="Composite tilt",
-                             line=dict(color=INK, width=2.2),
+                             line=dict(color=INK, width=2.4),
                              fill="tozeroy", fillcolor="rgba(30,41,59,0.06)"),
                   secondary_y=False)
-    fig.add_hline(y=0.25, line=dict(color=S.GREEN, width=1, dash="dot"))
-    fig.add_hline(y=-0.25, line=dict(color=S.RED, width=1, dash="dot"))
     fig.add_trace(go.Scatter(x=h.index, y=h["NDX"], name="Nasdaq-100",
                              line=dict(color=NDX_COLOR, width=1.6)), secondary_y=True)
     fig.update_layout(height=420, margin=dict(l=0, r=0, t=10, b=0),
@@ -169,19 +178,42 @@ def history_chart(hist, lb_days):
 
 
 def subscore_chart(hist, lb_days):
+    """Small multiples: one clean lane per signal (instead of 6 overlapping lines)."""
     cut = hist.index[-1] - pd.Timedelta(days=lb_days)
     h = hist[hist.index >= cut]
-    names = {"trend": "Trend", "credit": "Credit", "curve": "Yield curve",
-             "breadth": "Breadth", "vix": "Volatility", "coppergold": "Copper/Gold"}
-    fig = go.Figure()
-    for k, nm in names.items():
-        fig.add_trace(go.Scatter(x=h.index, y=h[k], name=nm, mode="lines",
-                                 line=dict(width=1.4)))
-    fig.add_hline(y=0, line=dict(color=MUTED, width=1, dash="dash"))
-    fig.update_layout(height=340, margin=dict(l=0, r=0, t=10, b=0),
-                      legend=dict(orientation="h", y=1.12, x=0),
+    items = [("trend", "Trend", "#2563eb"),
+             ("credit", "Credit appetite", "#0891b2"),
+             ("curve", "Yield curve", "#7c3aed"),
+             ("breadth", "Market breadth", "#db2777"),
+             ("vix", "Volatility", "#ea580c"),
+             ("coppergold", "Copper / Gold", "#ca8a04")]
+    fig = make_subplots(rows=len(items), cols=1, shared_xaxes=True,
+                        vertical_spacing=0.045,
+                        subplot_titles=[nm for _, nm, _ in items])
+    for i, (k, nm, color) in enumerate(items, 1):
+        y = h[k]
+        fig.add_trace(go.Scatter(x=h.index, y=y.clip(lower=0), mode="lines",
+                                 line=dict(width=0), fill="tozeroy",
+                                 fillcolor="rgba(22,163,74,0.16)",
+                                 showlegend=False, hoverinfo="skip"), row=i, col=1)
+        fig.add_trace(go.Scatter(x=h.index, y=y.clip(upper=0), mode="lines",
+                                 line=dict(width=0), fill="tozeroy",
+                                 fillcolor="rgba(220,38,38,0.16)",
+                                 showlegend=False, hoverinfo="skip"), row=i, col=1)
+        fig.add_trace(go.Scatter(x=h.index, y=y, mode="lines",
+                                 line=dict(color=color, width=2.2),
+                                 showlegend=False), row=i, col=1)
+        fig.add_hline(y=0, line=dict(color=MUTED, width=0.8, dash="dot"), row=i, col=1)
+        fig.update_yaxes(range=[-1.15, 1.15], tickvals=[-1, 0, 1],
+                         tickfont=dict(size=11), showgrid=False,
+                         zeroline=False, row=i, col=1)
+    # left-align the per-lane titles
+    for ann in fig["layout"]["annotations"]:
+        ann["x"] = 0
+        ann["xanchor"] = "left"
+        ann["font"] = dict(size=13.5, color=INK)
+    fig.update_layout(height=120 * len(items), margin=dict(l=0, r=0, t=26, b=0),
                       plot_bgcolor="white", paper_bgcolor="white")
-    fig.update_yaxes(range=[-1.05, 1.05], showgrid=True, gridcolor="#f1f5f9")
     return fig
 
 
@@ -329,10 +361,11 @@ with tab_hist:
     st.markdown("##### Each indicator over time")
     st.plotly_chart(subscore_chart(hist, LB), use_container_width=True,
                     config={"displayModeBar": False})
-    st.caption("📖 **How to read:** each colored line is one signal's score over time. "
-               "**Above** the dashed zero line = that signal is bullish, **below** = bearish. "
-               "When most lines sit above zero together, the composite (and the thermometer) "
-               "runs hot; when they roll over together, caution is building.")
+    st.caption("📖 **How to read:** each mini-panel is one signal's score over time. The "
+               "**green half (above the dotted zero line)** = that signal is bullish; the "
+               "**red half (below)** = bearish. Scan down a single date: when most panels are "
+               "in their green half together, the composite (and the thermometer) runs hot; "
+               "when they sink into red together, caution is building.")
 
 # ============================ BACKTEST ===================================== #
 with tab_back:
