@@ -63,10 +63,13 @@ CHART_READ = {
     "coppergold": "📖 **How to read:** the dark line is the copper ÷ gold price ratio. "
                   "**Above** its amber 200-day average = markets pricing growth over fear "
                   f"(bullish for tech); **below** = fear winning (caution). {NDX_NOTE}",
-    "earnings": "📖 **How to read:** **fwd EPS Δ 90d** = how much analysts have changed their "
-                "next-year profit estimate over the last 90 days — positive means estimates are "
-                "being **raised** (good). **up/down (30d)** = how many analysts raised vs cut in "
-                "the last month. Rising estimates tend to lead rising prices.",
+    "earnings": "📖 **How to read:** this is the change in the analysts' **forecast**, not "
+                "earnings growth. **fwd EPS Δ 90d** = how much they've *raised or cut* their "
+                "estimate for next year's profit over the last 90 days — e.g. +39% means the "
+                "forecast is 39% higher than it was 90 days ago, **not** that earnings are 39% "
+                "above this year. **up/down (30d)** = how many analysts raised vs cut last month "
+                "(that's the 'breadth' — how unanimous they are). Rising, broad-based estimates "
+                "tend to lead rising prices.",
 }
 
 
@@ -263,6 +266,9 @@ with tab_now:
                 f"{sig[k]['name'].split('—')[0].strip()}</div>"
                 f"<div style='font-size:18px;font-weight:700;color:{lc}'>{sig[k]['score']:+.2f}</div>"
                 f"</div>", unsafe_allow_html=True)
+        st.caption("🟢 **Bullish** (score ≥ +0.33)  ·  🟡 **Neutral** (−0.33 to +0.33)  ·  "
+                   "🔴 **Bearish** (≤ −0.33). Each signal is scored −1 to +1; the thermometer "
+                   "blends all seven into the tilt on the right.")
     with c2:
         st.plotly_chart(thermometer_chart(composite, vcolor), use_container_width=True,
                         config={"displayModeBar": False})
@@ -360,6 +366,10 @@ with tab_back:
 st.markdown("---")
 with st.expander("⚠️  How to read this — and what it is NOT"):
     st.markdown(
+        "- **Reading the scores:** every signal *and* the blended composite runs from −1 to "
+        "+1. 🟢 **Bullish** = score ≥ +0.33 · 🟡 **Neutral** = between −0.33 and +0.33 · "
+        "🔴 **Bearish** = score ≤ −0.33. The thermometer uses the same scale (green/amber/red "
+        "bands) for the combined tilt.\n"
         "- **This is a risk *tilt*, not a trade signal.** It shifts the odds; it does not "
         "predict next week. Markets can stay irrational longer than any indicator.\n"
         "- **The value is in *agreement*** — when five or six signals lean the same way, "
