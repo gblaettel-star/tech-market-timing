@@ -15,6 +15,7 @@ Run:  streamlit run market_timing.py
 import datetime as dt
 import os
 
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -45,24 +46,24 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # Plain-language "how to read this chart" notes, shown under each diagram.
 NDX_NOTE = "Faint grey line = Nasdaq-100 (right axis) so you can see how the two move together."
 CHART_READ = {
-    "trend": "📖 **How to read:** the dark line is the Nasdaq-100 price; the amber dotted "
-             "line is its 200-day average. Price **above** amber = uptrend (bullish); "
-             "**below** = downtrend (caution).",
-    "credit": "📖 **How to read:** the dark line is the junk-bond ÷ safe-bond ratio; amber "
-              "dotted is its 200-day average. **Above** amber = investors happily buying risk "
-              f"(bullish); **below** = they're turning nervous (caution). {NDX_NOTE}",
+    "trend": "📖 **How to read:** the dark line is the Nasdaq-100 price; the amber dotted line "
+             "is its 200-day average. In the **green zone** (price above the average) = uptrend "
+             "(bullish); in the **red zone** (below) = downtrend (caution).",
+    "credit": "📖 **How to read:** the dark line is the junk-bond ÷ safe-bond ratio. In the "
+              "**green zone** (above its 200-day average) = investors happily buying risk "
+              f"(bullish); in the **red zone** (below) = turning nervous (caution). {NDX_NOTE}",
     "curve": "📖 **How to read:** the dark line is the 10-year *minus* 3-month interest rate. "
-             "**Above** the red zero line = normal (healthy); **below zero = inverted**, the "
-             f"classic recession warning (long lead). {NDX_NOTE}",
+             "**Green zone** (clearly positive) = normal/healthy; **red zone** (at or below "
+             f"zero) = inverted, the classic recession warning (long lead). {NDX_NOTE}",
     "breadth": "📖 **How to read:** the dark line is the average stock ÷ the index "
-               "(equal-weight vs cap-weight). **Above** its amber 200-day average = the rally "
-               f"is broad and healthy; **below** = it's narrowing and fragile. {NDX_NOTE}",
-    "vix": "📖 **How to read:** the dark line is the VIX 'fear gauge'. **Below** the grey 20 "
-           "line = calm markets (bullish); **above 20** = stress and bigger swings (caution). "
-           f"A sharp spike is often a contrarian bottom. {NDX_NOTE}",
+               "(equal-weight vs cap-weight). **Green zone** (above its 200-day average) = the "
+               f"rally is broad and healthy; **red zone** (below) = narrowing, fragile. {NDX_NOTE}",
+    "vix": "📖 **How to read:** the dark line is the VIX 'fear gauge'. Note it's **flipped** — "
+           "**green zone is the bottom** (low VIX ≈ calm, bullish); **red zone up top** (high "
+           f"VIX ≈ stress). A sharp spike into red is often a contrarian bottom. {NDX_NOTE}",
     "coppergold": "📖 **How to read:** the dark line is the copper ÷ gold price ratio. "
-                  "**Above** its amber 200-day average = markets pricing growth over fear "
-                  f"(bullish for tech); **below** = fear winning (caution). {NDX_NOTE}",
+                  "**Green zone** (above its 200-day average) = markets pricing growth over fear "
+                  f"(bullish for tech); **red zone** (below) = fear winning (caution). {NDX_NOTE}",
     "earnings": "📖 **How to read:** this is the change in the analysts' **forecast**, not "
                 "earnings growth. **fwd EPS Δ 90d** = how much they've *raised or cut* their "
                 "estimate for next year's profit over the last 90 days — e.g. +39% means the "
@@ -71,6 +72,38 @@ CHART_READ = {
                 "(that's the 'breadth' — how unanimous they are). Rising, broad-based estimates "
                 "tend to lead rising prices.",
 }
+
+
+# Green / amber / red zone definitions for each indicator chart, in NATIVE units.
+# Boundaries map the ±0.33 score thresholds back to the raw value:
+#   "ma"    → bullish/bearish pivot is the moving 200-day average (band = avg ± b)
+#   "const" → fixed levels (yield curve, VIX); invert=True means low values are bullish.
+ZONES = {
+    "trend": {"type": "ma", "b": 0.033},
+    "credit": {"type": "ma", "b": 0.0099},
+    "breadth": {"type": "ma", "b": 0.0099},
+    "coppergold": {"type": "ma", "b": 0.0165},
+    "curve": {"type": "const", "lo": -0.5, "hi": 0.5, "invert": False},
+    "vix": {"type": "const", "lo": 16, "hi": 24, "invert": True},
+}
+ZONE_GREEN, ZONE_AMBER, ZONE_RED = ("rgba(22,163,74,0.13)",
+                                    "rgba(245,158,11,0.13)",
+                                    "rgba(220,38,38,0.13)")
+
+
+def _add_zone_bands(fig, x, ylo, yhi, low, up, invert):
+    """Shade bullish/neutral/bearish bands between the lower & upper threshold curves."""
+    n = len(x)
+    base = np.full(n, ylo)
+    top = np.full(n, yhi)
+    low = np.clip(np.full(n, low) if np.isscalar(low) else np.asarray(low, float), ylo, yhi)
+    up = np.clip(np.full(n, up) if np.isscalar(up) else np.asarray(up, float), ylo, yhi)
+    bot_col, top_col = (ZONE_GREEN, ZONE_RED) if invert else (ZONE_RED, ZONE_GREEN)
+    for ydata, fill, color in [(base, None, None), (low, "tonexty", bot_col),
+                               (up, "tonexty", ZONE_AMBER), (top, "tonexty", top_col)]:
+        fig.add_trace(go.Scatter(x=x, y=ydata, mode="lines", line=dict(width=0),
+                                 fill=fill, fillcolor=color, hoverinfo="skip",
+                                 showlegend=False), secondary_y=False)
 
 
 # --------------------------------------------------------------------------- #
@@ -89,12 +122,28 @@ def get_earnings(tickers_key):
 # --------------------------------------------------------------------------- #
 # Charts
 # --------------------------------------------------------------------------- #
-def indicator_chart(s, ndx, lb_days, show_ndx=True):
+def indicator_chart(s, ndx, lb_days, show_ndx=True, zone=None):
     fig = make_subplots(specs=[[{"secondary_y": True}]])
     cut = ndx.index[-1] - pd.Timedelta(days=lb_days)
     series = s["series"]
     if series is not None:
         sv = series[series.index >= cut]
+        # Green/amber/red zone bands (drawn first, behind everything).
+        if zone is not None and len(sv):
+            x = sv.index
+            if zone["type"] == "ma":
+                ma = s["overlay"][s["overlay"].index >= cut].reindex(x).ffill().bfill()
+                low, up, inv = ma.values * (1 - zone["b"]), ma.values * (1 + zone["b"]), False
+            else:
+                low, up, inv = zone["lo"], zone["hi"], zone.get("invert", False)
+            lo_arr = np.full(len(x), low) if np.isscalar(low) else low
+            up_arr = np.full(len(x), up) if np.isscalar(up) else up
+            ylo = float(min(sv.values.min(), np.min(lo_arr)))
+            yhi = float(max(sv.values.max(), np.max(up_arr)))
+            pad = (yhi - ylo) * 0.06 or 1.0
+            ylo, yhi = ylo - pad, yhi + pad
+            _add_zone_bands(fig, x, ylo, yhi, low, up, inv)
+            fig.update_yaxes(range=[ylo, yhi], secondary_y=False)
         fig.add_trace(go.Scatter(x=sv.index, y=sv.values, name="indicator",
                                  line=dict(color=INK, width=2)), secondary_y=False)
         if s.get("overlay") is not None:
@@ -325,7 +374,8 @@ with tab_now:
                             unsafe_allow_html=True)
             with right:
                 if s["series"] is not None:
-                    st.plotly_chart(indicator_chart(s, ndx, LB, show_ndx=(k != "trend")),
+                    st.plotly_chart(indicator_chart(s, ndx, LB, show_ndx=(k != "trend"),
+                                                    zone=ZONES.get(k)),
                                     use_container_width=True, config={"displayModeBar": False})
                     st.caption(CHART_READ[k])
                 elif k == "earnings" and earn.get("ok"):
