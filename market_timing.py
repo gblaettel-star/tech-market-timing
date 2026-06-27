@@ -42,6 +42,33 @@ INK, MUTED, NDX_COLOR = "#1e293b", "#64748b", "rgba(100,116,139,0.55)"
 SIG_ORDER = ["trend", "earnings", "credit", "curve", "breadth", "vix", "coppergold"]
 HERE = os.path.dirname(os.path.abspath(__file__))
 
+# Plain-language "how to read this chart" notes, shown under each diagram.
+NDX_NOTE = "Faint grey line = Nasdaq-100 (right axis) so you can see how the two move together."
+CHART_READ = {
+    "trend": "📖 **How to read:** the dark line is the Nasdaq-100 price; the amber dotted "
+             "line is its 200-day average. Price **above** amber = uptrend (bullish); "
+             "**below** = downtrend (caution).",
+    "credit": "📖 **How to read:** the dark line is the junk-bond ÷ safe-bond ratio; amber "
+              "dotted is its 200-day average. **Above** amber = investors happily buying risk "
+              f"(bullish); **below** = they're turning nervous (caution). {NDX_NOTE}",
+    "curve": "📖 **How to read:** the dark line is the 10-year *minus* 3-month interest rate. "
+             "**Above** the red zero line = normal (healthy); **below zero = inverted**, the "
+             f"classic recession warning (long lead). {NDX_NOTE}",
+    "breadth": "📖 **How to read:** the dark line is the average stock ÷ the index "
+               "(equal-weight vs cap-weight). **Above** its amber 200-day average = the rally "
+               f"is broad and healthy; **below** = it's narrowing and fragile. {NDX_NOTE}",
+    "vix": "📖 **How to read:** the dark line is the VIX 'fear gauge'. **Below** the grey 20 "
+           "line = calm markets (bullish); **above 20** = stress and bigger swings (caution). "
+           f"A sharp spike is often a contrarian bottom. {NDX_NOTE}",
+    "coppergold": "📖 **How to read:** the dark line is the copper ÷ gold price ratio. "
+                  "**Above** its amber 200-day average = markets pricing growth over fear "
+                  f"(bullish for tech); **below** = fear winning (caution). {NDX_NOTE}",
+    "earnings": "📖 **How to read:** **fwd EPS Δ 90d** = how much analysts have changed their "
+                "next-year profit estimate over the last 90 days — positive means estimates are "
+                "being **raised** (good). **up/down (30d)** = how many analysts raised vs cut in "
+                "the last month. Rising estimates tend to lead rising prices.",
+}
+
 
 # --------------------------------------------------------------------------- #
 # Cached data loaders (thin wrappers over signals.py)
@@ -59,7 +86,7 @@ def get_earnings(tickers_key):
 # --------------------------------------------------------------------------- #
 # Charts
 # --------------------------------------------------------------------------- #
-def indicator_chart(s, ndx, lb_days):
+def indicator_chart(s, ndx, lb_days, show_ndx=True):
     fig = make_subplots(specs=[[{"secondary_y": True}]])
     cut = ndx.index[-1] - pd.Timedelta(days=lb_days)
     series = s["series"]
@@ -76,9 +103,10 @@ def indicator_chart(s, ndx, lb_days):
             fig.add_hline(y=0, line=dict(color=S.RED, width=1, dash="dash"))
         if s.get("hline") is not None:
             fig.add_hline(y=s["hline"], line=dict(color=MUTED, width=1, dash="dash"))
-    nv = ndx[ndx.index >= cut]
-    fig.add_trace(go.Scatter(x=nv.index, y=nv.values, name="Nasdaq-100",
-                             line=dict(color=NDX_COLOR, width=1.5)), secondary_y=True)
+    if show_ndx:
+        nv = ndx[ndx.index >= cut]
+        fig.add_trace(go.Scatter(x=nv.index, y=nv.values, name="Nasdaq-100",
+                                 line=dict(color=NDX_COLOR, width=1.5)), secondary_y=True)
     fig.update_layout(height=300, margin=dict(l=0, r=0, t=10, b=0),
                       legend=dict(orientation="h", y=1.12, x=0),
                       plot_bgcolor="white", paper_bgcolor="white")
@@ -238,6 +266,10 @@ with tab_now:
     with c2:
         st.plotly_chart(thermometer_chart(composite, vcolor), use_container_width=True,
                         config={"displayModeBar": False})
+        st.caption("📖 **How to read:** the mercury height is today's blended score (−1 to "
+                   "+1) — the weighted average of the 7 signals on the left. **Green** zone "
+                   "= buy tilt, **amber** = hold, **red** = sell. The black line marks the "
+                   "exact level. It's a *tilt*, not a prediction of next week.")
 
     st.markdown("---")
     st.subheader("The case behind the call")
@@ -255,8 +287,9 @@ with tab_now:
                             unsafe_allow_html=True)
             with right:
                 if s["series"] is not None:
-                    st.plotly_chart(indicator_chart(s, ndx, LB),
+                    st.plotly_chart(indicator_chart(s, ndx, LB, show_ndx=(k != "trend")),
                                     use_container_width=True, config={"displayModeBar": False})
+                    st.caption(CHART_READ[k])
                 elif k == "earnings" and earn.get("ok"):
                     tbl = earn["table"].copy()
                     tbl["fwd EPS Δ 90d"] = (tbl["mom"] * 100).map(lambda x: f"{x:+.1f}%")
@@ -266,6 +299,7 @@ with tab_now:
                     st.dataframe(tbl[["ticker", "fwd EPS Δ 90d", "up/down (30d)"]]
                                  .rename(columns={"ticker": "Stock"}).set_index("Stock"),
                                  use_container_width=True, height=320)
+                    st.caption(CHART_READ["earnings"])
 
 # ============================ HISTORY ====================================== #
 with tab_hist:
@@ -275,6 +309,11 @@ with tab_hist:
                "(no Yahoo history) — this is the 6 price/macro signals, reweighted.")
     st.plotly_chart(history_chart(hist, LB), use_container_width=True,
                     config={"displayModeBar": False})
+    st.caption("📖 **How to read:** the dark filled line is the composite tilt over time "
+               "(same −1…+1 scale as the thermometer); the faint grey line is the Nasdaq-100. "
+               "Look at whether the dark line sat in the **green band** (buy zone) or dropped "
+               "into the **red band** (sell zone) *before* the grey line's big moves — that's "
+               "the signal trying to lead the market.")
     cur = hist["composite"].iloc[-1]
     win = hist["composite"][hist.index >= hist.index[-1] - pd.Timedelta(days=LB)]
     m1, m2, m3 = st.columns(3)
@@ -284,6 +323,10 @@ with tab_hist:
     st.markdown("##### Each indicator over time")
     st.plotly_chart(subscore_chart(hist, LB), use_container_width=True,
                     config={"displayModeBar": False})
+    st.caption("📖 **How to read:** each colored line is one signal's score over time. "
+               "**Above** the dashed zero line = that signal is bullish, **below** = bearish. "
+               "When most lines sit above zero together, the composite (and the thermometer) "
+               "runs hot; when they roll over together, caution is building.")
 
 # ============================ BACKTEST ===================================== #
 with tab_back:
@@ -296,6 +339,11 @@ with tab_back:
     eq_s, eq_h, ss, sh = S.backtest(px, hist, threshold=threshold)
     st.plotly_chart(equity_chart(eq_s, eq_h), use_container_width=True,
                     config={"displayModeBar": False})
+    st.caption("📖 **How to read:** growth of $1. **Grey** = buy & hold the Nasdaq the whole "
+               "time. **Green** = the timing model that steps aside to cash whenever the "
+               "composite falls below your threshold. In a bull market green usually finishes "
+               "*lower* — its job isn't to win the race, it's to fall less in crashes "
+               "(see Max drawdown below).")
     a, b, c, d = st.columns(4)
     a.metric("Timing — total return", f"{ss['total']*100:+.0f}%", f"CAGR {ss['cagr']*100:.1f}%")
     b.metric("Buy & hold — total return", f"{sh['total']*100:+.0f}%", f"CAGR {sh['cagr']*100:.1f}%")
