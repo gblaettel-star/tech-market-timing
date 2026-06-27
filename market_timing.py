@@ -24,6 +24,20 @@ import signals as S
 
 st.set_page_config(page_title="Tech Market Timing", page_icon="📈", layout="wide")
 
+# Larger, more readable type throughout (Garry prefers bigger fonts).
+st.markdown("""
+<style>
+  html, body, [class*="css"]            { font-size: 16.5px; }
+  .stMarkdown p, .stMarkdown li         { font-size: 1.05rem; line-height: 1.55; }
+  [data-testid="stCaptionContainer"],
+  .stCaption, .stCaption p              { font-size: 0.98rem !important; color:#475569; }
+  [data-testid="stMetricLabel"] p       { font-size: 1.02rem; }
+  [data-testid="stMetricValue"]         { font-size: 1.7rem; }
+  .streamlit-expanderHeader, summary p  { font-size: 1.08rem !important; font-weight: 600; }
+  button[data-baseweb="tab"] p          { font-size: 1.14rem; font-weight: 600; }
+</style>
+""", unsafe_allow_html=True)
+
 INK, MUTED, NDX_COLOR = "#1e293b", "#64748b", "rgba(100,116,139,0.55)"
 SIG_ORDER = ["trend", "earnings", "credit", "curve", "breadth", "vix", "coppergold"]
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -73,18 +87,30 @@ def indicator_chart(s, ndx, lb_days):
     return fig
 
 
-def gauge_chart(composite):
-    fig = go.Figure(go.Indicator(
-        mode="gauge+number", value=composite,
-        number=dict(valueformat="+.2f", font=dict(size=40)),
-        gauge=dict(axis=dict(range=[-1, 1], tickvals=[-1, -0.25, 0.25, 1],
-                             ticktext=["Sell", "", "", "Buy"]),
-                   bar=dict(color=INK, thickness=0.25),
-                   steps=[dict(range=[-1, -0.25], color="#fee2e2"),
-                          dict(range=[-0.25, 0.25], color="#fef3c7"),
-                          dict(range=[0.25, 1], color="#dcfce7")],
-                   threshold=dict(line=dict(color="black", width=3), value=composite))))
-    fig.update_layout(height=260, margin=dict(l=20, r=20, t=10, b=0), paper_bgcolor="white")
+def thermometer_chart(composite, color):
+    """Vertical 'thermometer': mercury fills from −1 up to the composite tilt,
+    over red / amber / green zone bands."""
+    fig = go.Figure()
+    fig.add_hrect(y0=0.25, y1=1, fillcolor="#dcfce7", line_width=0, layer="below")
+    fig.add_hrect(y0=-0.25, y1=0.25, fillcolor="#fef3c7", line_width=0, layer="below")
+    fig.add_hrect(y0=-1, y1=-0.25, fillcolor="#fee2e2", line_width=0, layer="below")
+    fig.add_trace(go.Bar(x=["Tilt"], y=[composite + 1], base=-1, width=0.55,
+                         marker=dict(color=color, line=dict(color="white", width=1)),
+                         hoverinfo="skip"))
+    fig.add_hline(y=0.25, line=dict(color=S.GREEN, width=1, dash="dot"))
+    fig.add_hline(y=-0.25, line=dict(color=S.RED, width=1, dash="dot"))
+    fig.add_hline(y=composite, line=dict(color=INK, width=3),
+                  annotation_text=f"  {composite:+.2f}  ",
+                  annotation_position="top right",
+                  annotation_font=dict(size=24, color=INK))
+    fig.update_layout(height=400, margin=dict(l=10, r=10, t=24, b=10),
+                      showlegend=False, bargap=0.55,
+                      plot_bgcolor="white", paper_bgcolor="white")
+    fig.update_xaxes(showticklabels=False, showgrid=False, zeroline=False, fixedrange=True)
+    fig.update_yaxes(range=[-1.04, 1.04], fixedrange=True,
+                     tickvals=[-1, -0.25, 0, 0.25, 1],
+                     ticktext=["Sell −1", "−0.25", "0", "+0.25", "Buy +1"],
+                     tickfont=dict(size=15), showgrid=False, zeroline=False)
     return fig
 
 
@@ -142,34 +168,37 @@ def equity_chart(eq_strat, eq_hold):
 
 
 # --------------------------------------------------------------------------- #
-# Sidebar
-# --------------------------------------------------------------------------- #
-st.sidebar.header("Settings")
-lookback = st.sidebar.select_slider("Chart lookback",
-                                    options=["1y", "2y", "3y", "5y", "10y", "Max"], value="3y")
-LB = {"1y": 365, "2y": 730, "3y": 1095, "5y": 1825, "10y": 3650, "Max": 36500}[lookback]
-
-st.sidebar.markdown("### Your portfolio")
-default_txt = "\n".join(S.read_portfolio(os.path.join(HERE, "portfolio.txt")))
-pf_text = st.sidebar.text_area(
-    "Tickers drive the Earnings-Revisions signal. Paste your own (comma or newline).",
-    value=default_txt, height=140)
-tickers = tuple(S.parse_tickers(pf_text)) or tuple(S.DEFAULT_PORTFOLIO)
-st.sidebar.caption(f"{len(tickers)} tickers · earnings signal samples these names.")
-
-st.sidebar.markdown("---")
-if st.sidebar.button("🔄 Refresh data", use_container_width=True):
-    st.cache_data.clear()
-    st.rerun()
-st.sidebar.caption("Prices cached 1h · earnings revisions cached 6h.")
-
-# --------------------------------------------------------------------------- #
-# Load
+# Header + top settings bar (replaces the left sidebar to win horizontal space)
 # --------------------------------------------------------------------------- #
 st.title("📈 US Tech Market Timing Dashboard")
 st.caption("A composite regime gauge for the Nasdaq-100 — seven indicators, one "
            "Buy / Hold / Sell tilt. Live, free data from Yahoo Finance.")
 
+with st.expander("⚙️  Settings — chart lookback & your portfolio", expanded=False):
+    sc1, sc2 = st.columns([1, 2])
+    with sc1:
+        lookback = st.select_slider(
+            "Chart lookback",
+            options=["1y", "2y", "3y", "5y", "10y", "Max"], value="3y")
+        if st.button("🔄 Refresh data now", use_container_width=True):
+            st.cache_data.clear()
+            st.rerun()
+        st.caption("Prices cached 1h · earnings 6h.")
+    with sc2:
+        default_txt = "\n".join(S.read_portfolio(os.path.join(HERE, "portfolio.txt")))
+        pf_text = st.text_area(
+            "Your portfolio — drives the Earnings-Revisions signal "
+            "(paste tickers, comma- or newline-separated).",
+            value=default_txt, height=150)
+
+LB = {"1y": 365, "2y": 730, "3y": 1095, "5y": 1825, "10y": 3650, "Max": 36500}[lookback]
+tickers = tuple(S.parse_tickers(pf_text)) or tuple(S.DEFAULT_PORTFOLIO)
+st.caption(f"📊 Earnings signal samples your **{len(tickers)}** portfolio tickers "
+           "· open ⚙️ Settings above to change the list or lookback.")
+
+# --------------------------------------------------------------------------- #
+# Load
+# --------------------------------------------------------------------------- #
 with st.spinner("Loading market data…"):
     px = get_prices()
 with st.spinner("Fetching analyst earnings revisions for your portfolio…"):
@@ -184,7 +213,7 @@ tab_now, tab_hist, tab_back = st.tabs(["🟢 Now", "📉 History", "🧪 Backtes
 
 # ============================ NOW ========================================== #
 with tab_now:
-    c1, c2 = st.columns([1.1, 1])
+    c1, c2 = st.columns([1.5, 1])
     with c1:
         st.markdown(
             f"<div style='padding:18px 24px;border-radius:14px;background:{vcolor}12;"
@@ -201,13 +230,13 @@ with tab_now:
             lab, lc = S.label_for(sig[k]["score"])
             col.markdown(
                 f"<div style='text-align:center'>"
-                f"<div style='font-size:22px'>{'🟢' if lc==S.GREEN else '🔴' if lc==S.RED else '🟡'}</div>"
-                f"<div style='font-size:11px;color:{MUTED};line-height:1.2'>"
+                f"<div style='font-size:27px'>{'🟢' if lc==S.GREEN else '🔴' if lc==S.RED else '🟡'}</div>"
+                f"<div style='font-size:14px;color:{MUTED};line-height:1.25'>"
                 f"{sig[k]['name'].split('—')[0].strip()}</div>"
-                f"<div style='font-size:13px;font-weight:700;color:{lc}'>{sig[k]['score']:+.2f}</div>"
+                f"<div style='font-size:18px;font-weight:700;color:{lc}'>{sig[k]['score']:+.2f}</div>"
                 f"</div>", unsafe_allow_html=True)
     with c2:
-        st.plotly_chart(gauge_chart(composite), use_container_width=True,
+        st.plotly_chart(thermometer_chart(composite, vcolor), use_container_width=True,
                         config={"displayModeBar": False})
 
     st.markdown("---")
@@ -222,7 +251,7 @@ with tab_now:
             with left:
                 st.metric("Current reading", s["reading"])
                 st.metric("Weight in composite", f"{S.WEIGHTS[k]*100:.0f}%")
-                st.markdown(f"<span style='color:{MUTED};font-size:14px'>{s['why']}</span>",
+                st.markdown(f"<span style='color:{MUTED};font-size:16px'>{s['why']}</span>",
                             unsafe_allow_html=True)
             with right:
                 if s["series"] is not None:
