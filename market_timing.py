@@ -369,31 +369,56 @@ with tab_hist:
 
 # ============================ BACKTEST ===================================== #
 with tab_back:
-    st.subheader("Would following the tilt have helped?")
-    st.caption("Strategy: hold the Nasdaq-100 only while the composite tilt is at/above the "
-               "threshold (acting one day later, no look-ahead); otherwise in cash. Compared "
-               "to buy & hold. Uses the 6 price-based signals over all available history.")
-    threshold = st.slider("Go-to-cash threshold (composite below this → out of market)",
-                          -0.5, 0.5, 0.0, 0.05)
+    st.subheader("Would stepping aside to cash have actually helped?")
+    st.markdown(
+        "A **‘what-if’ time machine.** Imagine putting **$1 into the Nasdaq-100 back in "
+        "2008.** Then ask: *what if, instead of holding it the whole way, I'd sold out to "
+        "cash every time the composite tilt turned cautious — and bought back when it "
+        "recovered?* The chart replays history day by day to compare the two.")
+    threshold = st.slider(
+        "How cautious? — sell to cash whenever the composite tilt falls below this level",
+        -0.5, 0.5, 0.0, 0.05,
+        help="Slide right = sell out more easily (more time in cash); "
+             "left = stay invested through more dips.")
     eq_s, eq_h, ss, sh = S.backtest(px, hist, threshold=threshold)
     st.plotly_chart(equity_chart(eq_s, eq_h), use_container_width=True,
                     config={"displayModeBar": False})
-    st.caption("📖 **How to read:** growth of $1. **Grey** = buy & hold the Nasdaq the whole "
-               "time. **Green** = the timing model that steps aside to cash whenever the "
-               "composite falls below your threshold. In a bull market green usually finishes "
-               "*lower* — its job isn't to win the race, it's to fall less in crashes "
-               "(see Max drawdown below).")
+    st.caption("📖 **How to read:** both lines start at $1. **Grey** = buy the Nasdaq once and "
+               "never sell. **Green** = the timing model that jumps to cash whenever the tilt "
+               "drops below your slider, then buys back when it rises above. Higher line = more "
+               "money; a **flat green stretch = the model was sitting in cash**, on the "
+               "sidelines.")
+    end_s, end_h = 1 + ss["total"], 1 + sh["total"]
     a, b, c, d = st.columns(4)
-    a.metric("Timing — total return", f"{ss['total']*100:+.0f}%", f"CAGR {ss['cagr']*100:.1f}%")
-    b.metric("Buy & hold — total return", f"{sh['total']*100:+.0f}%", f"CAGR {sh['cagr']*100:.1f}%")
-    c.metric("Max drawdown", f"{ss['maxdd']*100:.0f}%",
-             f"vs {sh['maxdd']*100:.0f}% hold", delta_color="off")
-    d.metric("Time in market", f"{ss['exposure']*100:.0f}%",
+    a.metric("Timing model: $1 became", f"${end_s:,.2f}",
+             f"{ss['cagr']*100:.1f}% per year", delta_color="off")
+    b.metric("Buy & hold: $1 became", f"${end_h:,.2f}",
+             f"{sh['cagr']*100:.1f}% per year", delta_color="off")
+    c.metric("Worst drop endured", f"{ss['maxdd']*100:.0f}%",
+             f"buy & hold: {sh['maxdd']*100:.0f}%", delta_color="off")
+    d.metric("Time invested (rest in cash)", f"{ss['exposure']*100:.0f}%",
              f"Sharpe {ss['sharpe']:.2f}", delta_color="off")
-    st.info("📏 The point isn't to beat buy & hold on return — over a roaring tech bull a "
-            "cash-when-cautious model usually trails on total gain. The win is **smaller "
-            "drawdowns**: it sidesteps the worst stretches. Judge it on max-drawdown and "
-            "peace of mind, not just the finish line. Past performance ≠ future results.")
+
+    # Honest, adaptive verdict that reads the actual numbers.
+    dd_gain = (sh["maxdd"] - ss["maxdd"]) * 100  # >0 means timing had the smaller drop
+    if end_s >= end_h and dd_gain >= 0:
+        st.success(f"✅ At this setting timing won on **both** counts — ended richer "
+                   f"(\\${end_s:,.2f} vs \\${end_h:,.2f} per \\$1) *and* with a smaller worst "
+                   "drop. That's rare; usually you trade one for the other.")
+    elif dd_gain >= 8 and end_s >= 0.5 * end_h:
+        st.info(f"🛡️ At this setting timing **bought you a calmer ride** — worst drop "
+                f"{ss['maxdd']*100:.0f}% vs {sh['maxdd']*100:.0f}% — but gave up some upside "
+                f"(\\${end_s:,.2f} vs \\${end_h:,.2f} per \\$1). A fair trade for some people.")
+    else:
+        st.warning(f"⚠️ At this setting timing **hurt**: \\$1 ended at **\\${end_s:,.2f}** vs "
+                   f"**\\${end_h:,.2f}** just holding, while the worst drop was barely better "
+                   f"({ss['maxdd']*100:.0f}% vs {sh['maxdd']*100:.0f}%). Over a long tech bull, "
+                   "mechanically selling on a wobble usually backfires — you miss the sharp "
+                   "rebounds. **Lesson: treat this dashboard as a risk-*awareness* tool, not an "
+                   "automatic in/out switch.**")
+    st.caption("Try moving the slider: you'll find there's usually *no* setting that beats buy "
+               "& hold on both money *and* calm — that tension is the real lesson here. "
+               "Past performance ≠ future results.")
 
 # ============================ Footer ======================================= #
 st.markdown("---")
