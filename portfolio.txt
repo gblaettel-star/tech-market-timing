@@ -1,0 +1,18 @@
+# Your portfolio — one ticker per line (text after # is ignored).
+# These drive the Earnings-Revisions signal. Replace with your own holdings.
+# (Default = the largest Nasdaq-100 names.)
+AAPL
+MSFT
+NVDA
+AMZN
+GOOGL
+META
+AVGO
+TSLA
+COST
+NFLX
+AMD
+ADBE
+CSCO
+QCOM
+TXN

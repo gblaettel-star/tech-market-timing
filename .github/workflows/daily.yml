@@ -1,0 +1,43 @@
+name: Daily market-timing email
+
+on:
+  schedule:
+    # 22:10 UTC on weekdays — after the US market close. Cron is UTC.
+    - cron: "10 22 * * 1-5"
+  workflow_dispatch: {}   # lets you run it manually from the Actions tab
+
+permissions:
+  contents: write          # allow committing the updated state file
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Compute tilt and send email
+        env:
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          NOTIFY_TO: ${{ secrets.NOTIFY_TO }}
+        run: python notify.py
+
+      - name: Commit updated state
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add state/last_state.json
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: update tilt state [skip ci]"
+            git push
+          else
+            echo "No state change to commit."
+          fi
