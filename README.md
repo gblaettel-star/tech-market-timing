@@ -1,5 +1,8 @@
 # 📈 US Tech Market Timing Dashboard
 
+### ▶️ **Live app: <https://tech-market-timing-bjuy2y2vqqwzkzvsqbpt3t.streamlit.app/>**
+_Open on your phone and "Add to Home Screen". (Free tier sleeps after inactivity — first visit wakes it in ~30s.)_
+
 A composite **Buy / Hold / Sell** regime gauge for US tech (Nasdaq-100). It blends
 seven leading indicators into one tilt, shows the chart behind each call, plots how
 the signal has developed over years, and backtests the price-based signals against
