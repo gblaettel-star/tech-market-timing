@@ -1,18 +1,24 @@
 # Your portfolio — one ticker per line (text after # is ignored).
-# These drive the Earnings-Revisions signal. Replace with your own holdings.
-# (Default = the largest Nasdaq-100 names.)
-AAPL
-MSFT
-NVDA
-AMZN
-GOOGL
-META
-AVGO
-TSLA
-COST
-NFLX
+# These drive the Earnings-Revisions signal. ETFs (SOXX, XLK) have no analyst
+# EPS estimates and are skipped by that signal — harmless to keep for reference.
+MU
+SNDK
+SOXX
+BE
+ALAB
 AMD
-ADBE
-CSCO
-QCOM
-TXN
+AAOI
+TTMI
+COHR
+NBIS
+GEV
+FIX
+MRVL
+STRL
+DELL
+XLK
+AGX
+GLW
+SIMO
+TSEM
+CRDO
